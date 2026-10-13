@@ -1,0 +1,65 @@
+name: Deploy to GitHub Pages
+
+on:
+  push:
+    branches:
+      - '**'
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: "pages"
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout main branch (as base)
+        uses: actions/checkout@v6
+        with:
+          ref: main
+          path: main-content
+
+      - name: Fetch all branches
+        run: |
+          cd main-content
+          git fetch --depth=1 origin '+refs/heads/*:refs/remotes/origin/*' --update-head-ok
+          git branch -r
+
+      - name: Prepare artifact structure
+        run: |
+          mkdir -p _site
+          cp -r ./main-content/* _site/
+          rm -rf _site/.git _site/.github
+          cd main-content
+          for branch in $(git branch -r | grep -v HEAD | sed 's/origin\///' | tr -d ' '); do
+            if [ "$branch" != "main" ]; then
+              mkdir -p "../_site/$branch"
+              git checkout -f "origin/$branch" -- . 2>/dev/null || true
+              cp -r ./* "../_site/$branch/" 2>/dev/null || true
+              rm -rf "../_site/$branch/.git" "../_site/$branch/.github"
+              git checkout -f main
+            fi
+          done
+          
+          cd ..
+          find _site -maxdepth 2 -type d
+
+      - name: Setup Pages
+        uses: actions/configure-pages@v6
+
+      - name: Upload artifact
+        uses: actions/upload-pages-artifact@v5
+        with:
+          path: './_site'
+
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v5
